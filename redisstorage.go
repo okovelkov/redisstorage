@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,14 +107,21 @@ func (s *Storage) Cookies(u *url.URL) string {
 	// TODO(js) Cookie methods currently have no way to return an error.
 
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	cookiesStr, err := s.Client.Get(s.getCookieID(u.Host)).Result()
-	s.mu.RUnlock()
 	if err == redis.Nil {
 		cookiesStr = ""
 	} else if err != nil {
 		// return nil, err
 		log.Printf("Cookies() .Get error %s", err)
 		return ""
+	}
+	subDomain := s.getSubDomain(u.Host)
+	if subDomain != "" {
+		subCookiesStr, err := s.Client.Get(s.getCookieID(subDomain)).Result()
+		if err == nil {
+			cookiesStr += subCookiesStr
+		}
 	}
 	return cookiesStr
 }
@@ -148,4 +156,12 @@ func (s *Storage) getCookieID(c string) string {
 
 func (s *Storage) getQueueID() string {
 	return fmt.Sprintf("%s:queue", s.Prefix)
+}
+
+func (s *Storage) getSubDomain(host string) string {
+	if strings.Count(host, ".") > 1 {
+		return host[strings.Index(host, ".")+1:]
+	} else {
+		return ""
+	}
 }
